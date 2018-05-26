@@ -10,11 +10,11 @@
     <div id="map"></div>
     <script>
       var url = 'wss://integracion-tarea-3.herokuapp.com';
-      var airports;
-      var flights;
+      var airports = {};
+      var flights = {};
       var map;
-      var lat;
-      var lng;
+      var lat = 0;
+      var lng = 0;
       var plane;
 
       function initMap() {
@@ -137,18 +137,20 @@
 
       function initAirports() {
         socket.emit('AIRPORTS');
+        setInterval(function() {socket.emit('AIRPORTS')}, 10000);
       }
 
       function initFlights() {
         socket.emit('FLIGHTS');
+        setInterval(function() {socket.emit('FLIGHTS')}, 10000);
       }
 
       function drawAirports(data) {
-        if(airports !== undefined) { return; };
-        airports = data;
-        lat = 0;
-        lng = 0;
-        for (var code in airports) {
+        var airportsChanged = false;
+        for (var code in data) {
+          if(airports[code] !== undefined) { break; }
+          airportsChanged = true;
+          airports[code] = data[code];
           var current_lat = airports[code].airport_position[0];
           var current_lng = airports[code].airport_position[1];
           lat += current_lat;
@@ -181,17 +183,28 @@
               }
             )(airports[code].marker, airports[code].infoWindow)
           );
-
         }
-        lat = lat / Object.keys(airports).length;
-        lng = lng / Object.keys(airports).length;
-        map.setCenter({lat, lng})
+        var all_codes = Object.keys(airports);
+        var new_codes = Object.keys(data);
+        var old_codes = all_codes.filter(function(i) {return new_codes.indexOf(i) < 0;});
+        for (var i in old_codes) {
+          airportsChanged = true;
+          airports[old_codes[i]].marker.setMap(null);
+          lat -= airports[old_codes[i]].airport_position[0];
+          lng -= airports[old_codes[i]].airport_position[1];
+          delete airports[old_codes[i]];
+        }
+        if (airportsChanged) {
+          var total_airports = Object.keys(airports).length;
+          mean_lat = lat / total_airports;
+          mean_lng = lng / total_airports;
+          map.setCenter({ lat: mean_lat, lng: mean_lng });
+        }
       }
 
       function drawFlights(data) {
-        if(flights !== undefined) { return; };
-        flights = {};
         for (var i in data) {
+          if(flights[data[i].code] !== undefined) { break; }
           flights[data[i].code] = data[i];
           var contentString = '<div id="content">'+
           '<h3>' + data[i].code + '</h3>' +
@@ -234,7 +247,7 @@
             lat: data[i].destination.airport_position[0],
             lng: data[i].destination.airport_position[1],
           }
-          new google.maps.Polyline({
+          flights[data[i].code].path_line = new google.maps.Polyline({
             path: [originPoint, destinationPoint],
             geodesic: true,
             strokeColor: '#f19a9a',
@@ -242,7 +255,7 @@
             strokeWeight: 4,
             map: map,
           });
-          new google.maps.Polyline({
+          flights[data[i].code].path_polyline = new google.maps.Polyline({
             path: flights[data[i].code].path,
             geodesic: true,
             strokeColor: '#f2e09b',
@@ -250,6 +263,14 @@
             strokeWeight: 10,
             map: map,
           });
+        }
+        var all_codes = Object.keys(flights);
+        var new_codes = data.map((x) => x.code);
+        var old_codes = all_codes.filter(function(i) {return new_codes.indexOf(i) < 0;});
+        for (var i in old_codes) {
+          flights[old_codes[i]].marker.setMap(null);
+          flights[old_codes[i]].path_line.setMap(null);
+          flights[old_codes[i]].path_polyline.setMap(null);
         }
       }
 
